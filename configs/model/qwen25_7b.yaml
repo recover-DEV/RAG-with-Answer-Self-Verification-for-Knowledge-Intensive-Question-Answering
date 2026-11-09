@@ -1,0 +1,32 @@
+# 生成器：Qwen2.5-7B-Instruct 通过 vLLM 的 OpenAI 兼容接口调用。
+# 换模型只改这一处；所有实验共用同一个 model 字段，避免"每个实验换个模型"导致结论不可比。
+
+generator:
+  backend: vllm_http            # vllm_http | openai | mock
+  base_url: ${MVS_LLM_BASE_URL:-http://127.0.0.1:8000/v1}
+  model: ${MVS_LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+  api_key: ${MVS_LLM_API_KEY:-EMPTY}
+  temperature: 0.0              # 主实验必须 0；自一致性基线的 k 个采样另开一个 config
+  top_p: 1.0
+  max_tokens: 256
+  timeout_s: 120
+  max_retries: 3
+  concurrency: 8                # 本地 vLLM 可到 32；付费 API 建议 <=5
+
+  # 成本核算用（本地部署填 0）
+  price_per_1m_input: 0.0
+  price_per_1m_output: 0.0
+
+# 校验器：断言级 NLI
+verifier:
+  nli_model: MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli
+  # 注意：必须跑 scripts/00_check_env.py 打印 id2label，确认 0/1/2 到底谁是谁。
+  # 顺序搞反的后果是"矛盾度"变"支持度"，而且数字看着还挺合理，很难发现。
+  labels: [entailment, neutral, contradiction]
+  batch_size: 64
+  max_length: 512
+
+# 断言分解
+decompose:
+  backend: rules                # rules（本地可做，先用规则+分号/句号切）| llm（服务器上再换）
+  max_claims: 8

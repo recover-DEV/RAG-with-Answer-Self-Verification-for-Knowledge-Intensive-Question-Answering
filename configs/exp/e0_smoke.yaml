@@ -1,0 +1,12 @@
+# 冒烟实验：不追求指标，只验证"数据能读 → 索引能建 → prompt 能拼 → 模型能答 → json 能解析"。
+# 这一步在笔记本上就能跑到第 3 环（用 mock 后端跑完 5 环），到服务器上再换成真模型跑一遍。
+extends:
+  - ../base.yaml
+  - ../data/crag.yaml
+  - ../model/qwen25_7b.yaml
+
+run:
+  id: E00_smoke
+  note: "20 题跑通全链路，检查字段与日志，不看指标"
+  n_questions: 20
+  split: dev

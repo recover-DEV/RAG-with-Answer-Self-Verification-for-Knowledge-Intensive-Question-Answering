@@ -1,0 +1,15 @@
+# 一律用 LF，避免 Windows 上写的脚本上传到 Linux 后报 "bad interpreter: ^M"
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+
+*.pdf binary
+*.pkl binary
+*.faiss binary
+*.npy binary
+*.png binary
+*.jpg binary

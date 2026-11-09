@@ -1,0 +1,49 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# --------
+data/raw/*
+data/interim/*
+data/processed/*
+data/index/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!data/index/.gitkeep
+
+results/runs/*
+results/features/*
+results/tables/*
+results/figures/*
+!results/runs/.gitkeep
+!results/features/.gitkeep
+!results/tables/.gitkeep
+!results/figures/.gitkeep
+
+logs/*
+!logs/.gitkeep
+
+# --------
+*.pkl
+*.faiss
+*.npy
+*.npz
+*.parquet
+*.pt
+*.bin
+
+# --------
+.env
+.cache/
+*.local.yaml
+.DS_Store
+Thumbs.db
+~$*

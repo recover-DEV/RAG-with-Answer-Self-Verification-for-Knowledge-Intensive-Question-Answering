@@ -1,0 +1,14 @@
+# 仅服务器（Linux + NVIDIA GPU）额外需要的包
+# 顺序很重要：先装 torch（按 CUDA 版本），再装这里，最后单独装 vLLM。
+# 具体命令见 docs/服务器部署指南.md 第 3 节。
+
+sentence-transformers==2.7.0
+transformers==4.48.3
+accelerate>=0.33
+faiss-cpu>=1.8.0        # 百万级向量建议改 faiss-gpu，但会与 torch 版本互相拉扯，先用 CPU 版
+sentencepiece
+protobuf>=4.25
+
+# vLLM 不写在这里，因为它对 torch/CUDA 版本极其敏感，必须单独一条命令装。
+# 见 docs/服务器部署指南.md §3.3。装完后 transformers 可能被它改写版本，
+# 这属于正常现象，但装完要立刻跑 scripts/09_smoke_vllm.py 验证。

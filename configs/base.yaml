@@ -1,0 +1,16 @@
+# 所有实验配置的公共底座。子配置用 extends 继承，只需要写差异。
+project: mvs
+seed: 2027
+
+paths:
+  # 相对项目根目录；用 ${MVS_ROOT} 可以整体改到别的盘/数据盘
+  root: ${MVS_ROOT:-.}
+  data: data
+  results: results
+  logs: logs
+
+# 记录用：方便以后写"实验环境"那一节
+env:
+  python: "3.10"
+  cuda: "12.1"
+  gpu: "RTX 4090 24GB"
