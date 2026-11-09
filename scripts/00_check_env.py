@@ -35,12 +35,18 @@ def _version(mod_name: str) -> str:
     return getattr(mod, "__version__", "已安装（无 __version__）")
 
 
-def _run(cmd: list[str]) -> str:
+def _run(cmd: list[str]) -> tuple[bool, str]:
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        return (out.stdout or out.stderr).strip()
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return f"不可用：{exc}"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"不可用：{exc}"
+
+    if out.returncode != 0:
+        detail = (out.stderr.strip() or out.stdout.strip())
+        return False, f"不可用（退出码 {out.returncode}）：{detail or '无诊断输出'}"
+
+    output = out.stdout.strip()
+    return bool(output), output
 
 
 def main() -> int:
@@ -70,9 +76,9 @@ def main() -> int:
     print("\n" + "=" * 68)
     print("3. GPU / 磁盘")
     print("=" * 68)
-    smi = _run(["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
-                "--format=csv,noheader"])
-    print("nvidia-smi :", smi if smi else "无 GPU 或未装驱动（本地正常）")
+    gpu_reported, smi = _run(["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+                              "--format=csv,noheader"])
+    print("nvidia-smi :", smi or "未检测到 NVIDIA GPU")
     try:
         import torch
 
@@ -113,8 +119,8 @@ def main() -> int:
         print("      pip install -r requirements.txt")
         return 1
     print("结论：核心环境 OK。")
-    if not smi:
-        print("      无 GPU —— 仍可完成：数据准备、BM25 建索引、prompt 联调、指标与画图。")
+    if not gpu_reported:
+        print("      nvidia-smi 未报告 GPU。仍可完成数据准备、BM25 建索引、prompt 联调、指标与画图。")
     return 0
 
 
