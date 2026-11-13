@@ -1,24 +1,36 @@
-# MVS：证据充分性判定与风险受控拒答（本科毕设实验仓库）
+# MVS · 面向知识密集型问答的答案自验证 RAG
 
-课题：《面向知识密集型问答的证据充分性判定与风险受控拒答方法研究与系统实现》
+本仓库用于本科毕设实验。以 Meta CRAG Task 1 为主要评测场景，研究如何提高检索证据的相关性、判断答案是否有证据支持，以及在证据不足时选择重试或拒答。
 
-这个仓库只放**代码、配置、日志和实验产物**，不放数据本体和论文正文。
-目标是在任何一台机器（笔记本 / 服务器）上用同一条命令复现同一批数字。
+## 研究范围与实现进度
+
+| 研究内容 | 实验设计 | 仓库现状 |
+|---|---|---|
+| 检索基线与重排序 | 比较 BM25、向量检索和混合检索。分别比较文本切分策略、召回数及重排序方法 | 已有切块、BM25 建索引与检索。向量、混合检索和重排序待实现。当前 `rerank_top_n` 只截取 BM25 排序结果 |
+| 答案–证据一致性评分 | 融合检索相关性、断言受证据支持程度、证据对问题的充分性 | 已有提示词、生成客户端和输出解析。三维评分待实现 |
+| 自适应决策 | 一致性达标时回答。按证据和答案状态选择重检索、重新生成或拒答。重试后复验 | 重检索、重新生成、复验和拒答策略待实现。已有部分风险–覆盖指标函数 |
+| 对比、消融与错误分析 | 在官方公开测试集报告答案准确率、拒答准确率与端到端推理延迟，复核检索失效、答案冲突、误拒及重试失败的案例 | 数据准备已保留官方测试集。生成时仍会跳过无检索块的题，逐题完整评测和实验汇总待完成 |
+
+检索实验固定生成模型与评判器。验证与决策实验固定首轮检索和生成配置，比较普通 RAG、仅验证后拒答与完整自适应方法。重检索更新证据后再生成，重新生成沿用当前证据。首版把额外重试预算设为每题一次。无可用证据且无法重检索时可直接拒答，重试后依据复验结果回答或拒答。
+
+预期交付可复现的实验框架、带答案自验证和自适应动作的 RAG 方法，以及包含基线对比、消融与错误案例的实验报告。
+
+研究设计见[技术路线](docs/01_毕设完成路线与技术调研.md)，分周交付与实验编号见[实验排期](docs/02_学习与实验计划_按周排期.md)，数据口径见[数据说明](data/README.md)。
 
 ---
 
-## 快速开始（5 步，本地即可，不需要 GPU）
+## 本地 CPU 自检与 BM25 冒烟
 
-```bash
-python -m venv .venv && .venv\Scripts\activate     # Windows
-pip install -r requirements.txt
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 python scripts/00_check_env.py                     # 环境自检，最后一行是结论
 python scripts/01_prepare_data.py --limit 50       # 规整 + 切分 + 切块
-python scripts/02_build_index.py --eval-n 50       # 建 BM25 索引 + 算 oracle recall
-python scripts/03_generate.py --limit 5            # 检索→prompt→（mock）生成→解析
+python scripts/02_build_index.py                   # 建 BM25 索引
 ```
 
-要上服务器，看 [`docs/服务器部署指南.md`](docs/服务器部署指南.md)。第一次用服务器尤其建议按它第 1 节的顺序来。
+准备数据前，将解包后的官方 CRAG JSONL 放在 `data/raw/crag/`。`--limit` 会将本地派生产物重建为小样本，正式实验前需要重新处理全量数据。当前 `configs/exp/e0_smoke.yaml` 默认调用 vLLM HTTP 服务。本地模拟生成需要在实验配置中把 `generator.backend` 覆盖为 `mock`。服务可用或配置好模拟后，运行下方的生成命令。[服务器部署指南](docs/服务器部署指南.md)
 
 ---
 
@@ -40,16 +52,17 @@ python scripts/03_generate.py --limit 5            # 检索→prompt→（mock�
 │   ├── config.py             #   配置加载：extends 继承 + ${ENV} 展开
 │   ├── paths.py              #   所有路径的唯一来源 + run_id 生成
 │   ├── data/                 #   读数据、规整、切分、切块
-│   ├── retrieve/             #   BM25（自实现）+ 后续的稠密检索/重排
+│   ├── retrieve/             #   已有 BM25，计划接入向量、混合检索与重排
 │   ├── generate/             #   prompt 模板 + LLM 客户端（vLLM / API / mock）
-│   ├── verify/               #   断言分解 + NLI 校验（第 10—12 周实现）
-│   ├── decide/               #   校准 + 风险受控决策（第 12—13 周实现）
-│   ├── eval/                 #   指标：risk-coverage、AURC、ECE、保形上界
+│   ├── verify/               #   预留：断言分解、证据校验与一致性评分
+│   ├── decide/               #   预留：阈值校准与动作选择
+│   ├── pipeline/             #   预留：重检索、重新生成与复验的流程编排
+│   ├── eval/                 #   已有风险–覆盖、AURC、ECE 等指标函数
 │   └── utils/                #   日志、随机种子、jsonl/CSV 读写
 ├── scripts/                  # 入口脚本，编号即执行顺序
 │   ├── 00_check_env.py       #   环境自检
 │   ├── 01_prepare_data.py    #   规整 + 切分 + 切块
-│   ├── 02_build_index.py     #   建索引 + oracle recall
+│   ├── 02_build_index.py     #   建 BM25 索引
 │   ├── 03_generate.py        #   生成（检索→prompt→解析→落盘）
 │   ├── 04_risk_coverage_demo.py  # 指标与画图的干跑
 │   ├── 09_smoke_vllm.py      #   vLLM 服务冒烟测试
@@ -58,7 +71,7 @@ python scripts/03_generate.py --limit 5            # 检索→prompt→（mock�
 │   └── onboarding_server.sh  #   服务器体检（不改环境）
 ├── results/                  # 实验产物（不进 git，但要备份）
 │   ├── runs/<run_id>/        #   一次实验一个目录：gen.jsonl + config.yaml + stats.json
-│   ├── features/features.csv #   ★ 所有方法共用的宽表，唯一分析入口
+│   ├── features/features.csv #   计划产物：逐题对齐的实验汇总表
 │   ├── tables/               #   论文里的表（CSV）
 │   └── figures/              #   论文里的图（PNG）
 ├── logs/                     # 运行日志（不进 git）
@@ -83,10 +96,8 @@ python scripts/03_generate.py --limit 5            # 检索→prompt→（mock�
 目录里必须有 `config.yaml`（本次实验的完整配置快照）和 `stats.json`（题数、耗时、解析成功率）。
 **没有配置快照的 run 目录等于废数据**——一个月后你无法解释"这个数字是哪来的"。
 
-**③ `results/features/features.csv` 是唯一分析入口。**
-一行一题，列是：`qid, split, method, conf, correct, coverage_deficit, contradiction, retrieval_score, ...`
-所有方法的对比、所有消融、所有图，都从这一张宽表算出来。
-**不要**在各自的 gen.jsonl 上分别算指标——那会让"同一批题"这个前提悄悄失效。
+**③ 用同一题集对齐各方法的结果。**
+计划用 `results/features/features.csv` 汇总数据，每个 run 的每道题一行，记录题目 ID、检索配置、一致性分项、初始与最终判定、触发动作、拒答标记及分阶段时延。保留初始和复验的证据、答案及分数，以便复查。缺证据、拒答和执行失败的样本也要计入对应测试集。
 
 ---
 
@@ -110,7 +121,7 @@ G02_qwen8b_20270218-1400
 python scripts/00_check_env.py                 # 开工先跑这个
 pytest -q                                      # 改完指标代码跑这个
 python scripts/03_generate.py --config configs/exp/e0_smoke.yaml --limit 5
-bash scripts/run_bg.sh gen_full python scripts/03_generate.py --split all   # 服务器上
+bash scripts/run_bg.sh gen_full python scripts/03_generate.py --split all   # 服务器上，遍历所有划分
 tail -f logs/gen_full_*.log                    # 看进度
 ```
 

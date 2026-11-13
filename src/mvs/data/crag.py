@@ -43,7 +43,12 @@ def normalize_question(rec: dict, fallback_idx: int = 0) -> dict:
     if not isinstance(rec, dict):
         raise TypeError(f"记录不是 dict: {type(rec)}")
 
-    qid = rec.get("qid") or rec.get("id") or rec.get("question_id")
+    qid = (
+        rec.get("interaction_id")
+        or rec.get("qid")
+        or rec.get("id")
+        or rec.get("question_id")
+    )
     if qid is None:
         qid = f"auto-{fallback_idx:05d}"
     question = rec.get("question") or rec.get("query") or rec.get("question_text")
@@ -55,7 +60,7 @@ def normalize_question(rec: dict, fallback_idx: int = 0) -> dict:
         aliases = [str(a) for a in answer]
         answer = aliases[0] if aliases else ""
     else:
-        aliases = [str(a) for a in rec.get("answer_aliases", [])]
+        aliases = [str(a) for a in (rec.get("alt_ans") or rec.get("answer_aliases") or [])]
 
     pages = rec.get("pages") or rec.get("search_results") or rec.get("contexts") or []
     if not isinstance(pages, list):
@@ -69,7 +74,10 @@ def normalize_question(rec: dict, fallback_idx: int = 0) -> dict:
         "domain": str(rec.get("domain") or rec.get("category") or "unknown"),
         "question_type": str(rec.get("question_type") or rec.get("type") or "unknown"),
         "pages": [_normalize_page(pg, i) for i, pg in enumerate(pages)],
+        "official_split": rec.get("split"),
+        "query_time": rec.get("query_time"),
     }
+
 
 
 def _normalize_page(page, idx: int) -> dict:

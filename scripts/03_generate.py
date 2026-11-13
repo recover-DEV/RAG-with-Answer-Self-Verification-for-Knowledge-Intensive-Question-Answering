@@ -36,27 +36,59 @@ from mvs.utils.seed import set_seed  # noqa: E402
 
 log = get_logger("mvs.generate")
 
+QA_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "qa_answer",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "citations": {"type": "array", "items": {"type": "integer"}},
+                "sufficient": {"type": "boolean"},
+                "missing": {"type": "string"},
+            },
+            "required": ["answer", "citations", "sufficient", "missing"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 def parse_json_block(text: str) -> dict | None:
-    """从模型输出里抠出第一个完整 JSON 对象（模型常加解释或 ```json 围栏）。"""
-    if not text:
-        return None
+    """解析首个 JSON 对象，允许前后带解释或代码围栏。"""
     start = text.find("{")
     if start < 0:
         return None
-    depth = 0
-    for i in range(start, len(text)):
-        ch = text[i]
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                try:
-                    return json.loads(text[start: i + 1])
-                except json.JSONDecodeError:
-                    return None
-    return None
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(text, idx=start)
+    except json.JSONDecodeError:
+        return None
+    return parsed
+
+
+def parse_qa_output(text: str) -> tuple[dict | None, bool]:
+    """只有完整字段仅缺外层右括号时才修复，保留原始输出。"""
+    parsed = parse_json_block(text)
+    if parsed is not None:
+        return parsed, False
+    start = text.find("{")
+    if start < 0:
+        return None, False
+    try:
+        repaired = json.loads(text[start:].rstrip() + "}")
+    except json.JSONDecodeError:
+        return None, False
+    if (
+        repaired.keys() == {"answer", "citations", "sufficient", "missing"}
+        and isinstance(repaired["answer"], str)
+        and isinstance(repaired["missing"], str)
+        and isinstance(repaired["sufficient"], bool)
+        and isinstance(repaired["citations"], list)
+        and all(type(citation) is int for citation in repaired["citations"])
+    ):
+        return repaired, True
+    return None, False
 
 
 def retrieve_pages(bm25: BM25, qid: str, question: str, qid_to_idx: dict,
@@ -105,6 +137,8 @@ def main() -> int:
     text_of = {c["doc_id"]: c["text"] for c in read_jsonl(PROJECT_ROOT / "data/interim/chunks.jsonl")}
 
     tag = cfg.generator.model.split("/")[-1]
+    response_format = QA_RESPONSE_FORMAT if cfg.generator.backend == "vllm_http" else None
+    cfg.generator.response_format = response_format
     run_id = args.run_id or new_run_id("E00" if cfg.generator.backend == "mock" else "E01", tag)
     out_path = run_dir(run_id) / "gen.jsonl"
     save_config(cfg, out_path.parent / "config.yaml")
@@ -149,11 +183,13 @@ def main() -> int:
 
         if not payloads:
             continue
-        replies = client.chat_many(payloads, concurrency=cfg.generator.concurrency)
+        replies = client.chat_many(
+            payloads, concurrency=cfg.generator.concurrency, response_format=response_format,
+        )
 
         for meta, reply in zip(metas, replies):
             q = meta["q"]
-            parsed = parse_json_block(reply or "")
+            parsed, repaired = parse_qa_output(reply or "")
             append_jsonl(out_path, {
                 "qid": q["qid"],
                 "question": q["question"],
@@ -167,6 +203,7 @@ def main() -> int:
                 "model_sufficient": (parsed or {}).get("sufficient"),
                 "model_missing": (parsed or {}).get("missing", ""),
                 "parse_ok": parsed is not None,
+                "json_repaired": repaired,
             })
             n_done += 1
         log.info("进度 %d/%d", min(offset + batch_size, len(todo)), len(todo))
@@ -177,6 +214,7 @@ def main() -> int:
     save_json(out_path.parent / "stats.json", {
         "run_id": run_id, "split": args.split, "n_new": n_done,
         "n_total": len(rows), "parse_fail": parse_fail,
+        "json_repaired": sum(bool(r.get("json_repaired")) for r in rows),
         "seconds": round(elapsed, 1),
         "sec_per_question": round(elapsed / max(n_done, 1), 3),
         **client.summary(),

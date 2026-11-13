@@ -89,7 +89,7 @@ class LLMClient:
 
     # ---------- 单次调用 ----------
 
-    def chat(self, messages: Sequence[dict]) -> str:
+    def chat(self, messages: Sequence[dict], *, response_format: dict | None = None) -> str:
         if self._mock is not None:
             resp = self._mock.chat(messages)
             self._record(resp["usage"], 0.0)
@@ -102,6 +102,8 @@ class LLMClient:
             "top_p": self.cfg.top_p,
             "max_tokens": self.cfg.max_tokens,
         }
+        if response_format is not None:
+            payload["response_format"] = response_format
         last_exc: Exception | None = None
         for attempt in range(1, self.cfg.max_retries + 1):
             started = time.time()
@@ -126,21 +128,24 @@ class LLMClient:
 
     # ---------- 批量调用 ----------
 
-    def chat_many(self, batch: Sequence[Sequence[dict]],
-                  concurrency: int | None = None) -> list[str | None]:
+    def chat_many(self, batch: Sequence[Sequence[dict]], concurrency: int | None = None,
+                  *, response_format: dict | None = None) -> list[str | None]:
         """并发跑一批，顺序与输入一致；单条失败返回 None 而不炸掉整个批次。"""
         workers = max(1, min(concurrency or self.cfg.concurrency, len(batch) or 1))
         results: list[str | None] = [None] * len(batch)
         if workers == 1:
             for i, msgs in enumerate(batch):
                 try:
-                    results[i] = self.chat(msgs)
+                    results[i] = self.chat(msgs, response_format=response_format)
                 except RuntimeError as exc:
                     log.error("第 %d 条失败: %s", i, exc)
             return results
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(self.chat, msgs): i for i, msgs in enumerate(batch)}
+            futures = {
+                pool.submit(self.chat, msgs, response_format=response_format): i
+                for i, msgs in enumerate(batch)
+            }
             for fut in as_completed(futures):
                 idx = futures[fut]
                 try:

@@ -4,6 +4,7 @@
 产物（全部可重建，删了不影响原始数据）：
     data/processed/questions.jsonl   带 split 标记的题目
     data/processed/splits.json       qid 列表 + 数量（提交这份，证明没事后重切）
+    data/processed/data_config.yaml  数据准备配置快照，含官方切分规则
     data/interim/chunks.jsonl        切块结果，供建索引使用
     data/processed/stats.json        数据画像，写论文"实验设置"时直接用
 
@@ -15,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -29,7 +31,7 @@ init_console()
 from mvs.config import load_config, save_config  # noqa: E402
 from mvs.data.chunking import iter_page_chunks  # noqa: E402
 from mvs.data.crag import make_splits, write_splits  # noqa: E402
-from mvs.paths import INTERIM_DIR, PROCESSED_DIR, PROJECT_ROOT, RAW_DIR  # noqa: E402
+from mvs.paths import INTERIM_DIR, PROCESSED_DIR, PROJECT_ROOT  # noqa: E402
 from mvs.utils.io import save_json, write_jsonl  # noqa: E402
 from mvs.utils.logging import get_logger  # noqa: E402
 
@@ -40,6 +42,22 @@ def find_raw_files(raw_dir: Path) -> list[Path]:
     files = sorted(p for p in raw_dir.glob("*.jsonl"))
     files += sorted(p for p in raw_dir.glob("*.json"))
     return files
+
+
+def data_snapshot(cfg, limit: int, validation_ratios: dict[str, float]) -> dict:
+    return {
+        "raw_dir": cfg.raw_dir,
+        "processed_dir": PROCESSED_DIR.relative_to(PROJECT_ROOT).as_posix(),
+        "interim_dir": INTERIM_DIR.relative_to(PROJECT_ROOT).as_posix(),
+        "limit": limit,
+        "splits": {
+            **validation_ratios,
+            "seed": cfg.splits.seed,
+            "official_validation_split": 0,
+            "official_test_split": 1,
+        },
+        "chunk": cfg.chunk,
+    }
 
 
 def main() -> int:
@@ -71,8 +89,21 @@ def main() -> int:
         items = items[: args.limit]
         log.warning("--limit %d 生效：只处理前 %d 题（统计数字不可用于论文）", args.limit, len(items))
 
-    splits = make_splits(items, {k: v for k, v in vars(cfg.splits).items() if k != "seed"},
-                         seed=cfg.splits.seed)
+    if any(q["official_split"] not in (0, 1) for q in items):
+        raise ValueError("CRAG 官方 split 缺失或无效，应为 0 或 1")
+
+    validation = [q for q in items if q["official_split"] == 0]
+    validation_weights = {"dev": cfg.splits.dev, "cal": cfg.splits.cal}
+    total_weight = sum(validation_weights.values())
+    if not math.isfinite(total_weight) or total_weight <= 0 or min(validation_weights.values()) < 0:
+        raise ValueError("dev 和 cal 的权重必须为有限非负数，且权重之和大于 0")
+    splits = make_splits(
+        validation,
+        validation_weights,
+        seed=cfg.splits.seed,
+    )
+    splits["test"] = [q["qid"] for q in items if q["official_split"] == 1]
+
     split_of = {qid: name for name, ids in splits.items() for qid in ids}
 
     rows = []
@@ -95,7 +126,9 @@ def main() -> int:
     write_jsonl(PROCESSED_DIR / "questions.jsonl", rows)
     write_splits(splits, PROCESSED_DIR / "splits.json")
     write_jsonl(INTERIM_DIR / "chunks.jsonl", chunk_rows)
-    save_config(cfg, PROCESSED_DIR / "data_config.yaml")
+    validation_ratios = {name: weight / total_weight for name, weight in validation_weights.items()}
+    snapshot = data_snapshot(cfg, args.limit, validation_ratios)
+    save_config(snapshot, PROCESSED_DIR / "data_config.yaml")
 
     n_pages = sum(len(r["pages"]) for r in rows)
     n_support = sum(1 for r in rows for p in r["pages"] if p.get("support"))

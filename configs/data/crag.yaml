@@ -4,15 +4,13 @@
 
 name: crag
 raw_dir: data/raw/crag          # 原始 jsonl 放这里，只读，不要手改
-processed_dir: data/processed/crag
 index_dir: data/index/crag
 
-# 三段划分：按 qid 哈希，保证任何人任何时候跑出来的切分完全一致（不能随机重切）
-# dev 用来拟合法定参数（权重、温度），cal 用来定阈值 τ，test 只用来报最终指标
+# 仅对官方验证集（split=0）按 qid 哈希划分 dev/cal。
+# 官方公开测试集（split=1）全部保留为 test。
 splits:
-  dev: 0.2
-  cal: 0.3
-  test: 0.5
+  dev: 0.4
+  cal: 0.6
   seed: 2027
 
 # 切块：约 384 token / 重叠 64 token。中文 1 token ≈ 1.5 字，故按字符控制

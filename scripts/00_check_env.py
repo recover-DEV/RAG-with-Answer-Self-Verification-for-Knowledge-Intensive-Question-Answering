@@ -67,11 +67,11 @@ def main() -> int:
     missing_core = []
     for name in CORE:
         ver = _version(name)
-        print(f"  [核心] {name:<22} {ver}")
+        print(f"{name:<22} {ver}")
         if ver.startswith("缺失"):
             missing_core.append(name)
     for name in OPTIONAL:
-        print(f"  [可选] {name:<22} {_version(name)}")
+        print(f"{name:<22} {_version(name)}")
 
     print("\n" + "=" * 68)
     print("3. GPU / 磁盘")
